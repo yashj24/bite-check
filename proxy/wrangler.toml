@@ -1,0 +1,20 @@
+name = "bite-check-proxy"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# Comma-separated list of extension origins allowed to call the proxy.
+# Set to your published extension ID before deploying.
+# This is a browser-level gate only; real protection = rate limit + Google quotas + budget alerts.
+[vars]
+ALLOWED_ORIGINS = "chrome-extension://REPLACE_WITH_EXTENSION_ID"
+MAX_PHOTOS_LIMIT = "10"
+
+# Per-IP rate limit (Workers Rate Limiting binding). period must be 10 or 60.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+# Secret (never in this file):  npx wrangler secret put GOOGLE_MAPS_API_KEY

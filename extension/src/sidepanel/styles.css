@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-brand-50: #fff4ed;
+  --color-brand-100: #ffe5d4;
+  --color-brand-400: #ff8a4c;
+  --color-brand-500: #f9662a;
+  --color-brand-600: #e14d14;
+  --color-brand-700: #b93a10;
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body {
+  @apply bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
+  min-width: 300px;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.skeleton {
+  @apply animate-pulse bg-stone-200 dark:bg-stone-800;
+}

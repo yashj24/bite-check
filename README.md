@@ -19,7 +19,9 @@ A Chrome extension (Manifest V3) that shows what a restaurant looks like before 
 > ⚠️ **Terms-of-service note.** Zomato's and Swiggy's terms restrict scraping and automated access. Bite Check only reads two pieces of visible text locally on a page the user opened, and never calls their servers. That's much lower risk than scraping, but it's still a grey area. Review their current terms, ideally with legal advice, before publishing (see the Stage 5 checklist).
 
 ### Why maps are on a hosted page (MV3)
-MV3 forbids remotely hosted code, so the Maps JavaScript API can't run inside extension pages. Bite Check uses **option (b)**: the proxy serves `/embed/map` (modes: `pano`, or `map` for the satellite fallback), a small page on *your* domain that loads the Maps JavaScript API, and the side panel embeds it in a sandboxed iframe. This was chosen over Maps Embed API iframes because Stage 3 needs custom markers and toggleable layers, which the Embed API can't do. The Embed API would also put a key in the iframe URL anyway.
+MV3 forbids remotely hosted code, so the Maps JavaScript API can't run inside extension pages. Bite Check uses **option (b)**: the proxy serves `/embed/map` (modes: `pano`, or `map` for the satellite fallback), a small page on *your* domain that loads the Maps JavaScript API, and the side panel embeds it in a sandboxed iframe. This was chosen over Maps Embed API iframes because:
+- an Embed API iframe would carry the key in its URL inside the extension, and Google's website (referrer) restriction can't be locked to a `chrome-extension://` origin;
+- the hosted page can tell the panel when the panorama has loaded or failed, so the panel can show proper loading and error states.
 
 The page uses a **separate browser key**, locked to your proxy's domain (HTTP referrer) and to the Maps JavaScript API. As with any Google map on the web, that key is visible to people who load the page. The referrer lock, the API restriction and quotas are what protect it. The page sends a strict nonce-based CSP, and its `frame-ancestors` setting lets only your extension embed it.
 
@@ -30,13 +32,15 @@ bite-check/
 │   ├── .env.example           VITE_PROXY_URL
 │   ├── public/icons/
 │   └── src/
-│       ├── background/service-worker.ts   opens the side panel when you click the icon
-│       ├── lib/               api client, storage (place_id only), lazy photo hook, types
-│       └── sidepanel/         React UI (App, SearchBox, InfoStrip, PhotoGallery, States)
-└── proxy/                     Cloudflare Worker that holds the Google API key
+│       ├── background/service-worker.ts   opens the side panel; relays detections per tab
+│       ├── content/detect.ts  Zomato/Swiggy: reads restaurant name + area locally
+│       ├── lib/               api client, storage (place_id only), photo + detection hooks, types
+│       └── sidepanel/         React UI (App, SearchBox, Detected, InfoStrip, PhotoGallery, StreetViewTab, States)
+└── proxy/                     Cloudflare Worker that holds the Google API keys
     ├── wrangler.toml          origin allowlist, per-IP rate limit binding
     ├── .dev.vars.example
-    └── src/                   index.ts (router, CORS, rate limit), google.ts, validate.ts
+    └── src/                   index.ts (router, CORS, rate limit, place_id cache), google.ts,
+                               embed.ts (hosted map page), validate.ts
 ```
 
 ## How data flows
@@ -69,22 +73,19 @@ Side panel ──(query / place_id / photo name)──▶ Proxy (holds key) ─�
 6. Set **budget alerts** under Billing → Budgets & alerts, at 50%, 90% and 100% of your monthly limit.
 7. Never commit keys. `.dev.vars` and `.env` are already in `.gitignore`.
 
-> ⚠️ **Server-IP restriction and Cloudflare Workers.** Workers send requests from shared Cloudflare IP ranges, not a fixed IP, so Google's "IP address" key restriction cannot be applied. To meet your "restrict by server IP" requirement, use one of these:
-> - **A. Keep Workers.** Restrict the key by API only, and rely on hard quotas, budget alerts, the proxy rate limit and the origin allowlist. This is the simplest option.
-> - **B. Host the same proxy logic on Cloud Run (or a VM) with a static egress IP** (Cloud NAT), then IP-restrict the key. The handler only uses standard `fetch`/`Request`/`Response`, so moving it is a small adapter.
->
-> Decide this before production.
+> ⚠️ **Server-IP restriction and Cloudflare Workers.** Workers send requests from shared Cloudflare IP ranges, not a fixed IP, so Google's "IP address" key restriction can't be applied. This project restricts the server key **by API only**, and relies on hard daily quotas, budget alerts, the proxy rate limit and the origin allowlist. If you need an IP-restricted key, host the same proxy logic on Cloud Run (or a VM) with a static egress IP (Cloud NAT). The handler only uses standard `fetch`/`Request`/`Response`, so moving it needs only a small adapter.
 
 ### 2. Proxy (local)
 ```bash
 cd proxy
 npm install
-cp .dev.vars.example .dev.vars      # put your server key in it
+cp .dev.vars.example .dev.vars      # put your server key and browser key in it
 npm run dev                         # http://localhost:8787
 ```
 Deploy:
 ```bash
 npx wrangler secret put GOOGLE_MAPS_API_KEY
+npx wrangler secret put MAPS_BROWSER_KEY      # add https://<your-proxy-domain>/* to its website restriction
 # edit wrangler.toml → ALLOWED_ORIGINS = "chrome-extension://<your-extension-id>"
 npm run deploy
 ```
@@ -118,7 +119,7 @@ For live reload during development, run `npm run dev` and load `extension/dist` 
 
 Guardrails: strict regex validation on every input; 60 requests/min per IP (Workers Rate Limiting binding, with an in-memory fallback in dev); `Origin` allowlist; 8 s upstream timeout; Google errors mapped to `quota`, `not_found`, `timeout` or `upstream` without leaking key or project details.
 
-## Cost (Stage 1, approximate)
+## Cost (approximate)
 
 Check current prices on Google's Places API pricing page. Google changed its SKUs and free monthly caps in 2025, so the numbers below are ballpark USD per 1,000 calls.
 
@@ -128,9 +129,7 @@ Check current prices on Google's Places API pricing page. Google changed its SKU
 | Opening a place | Place Details **Enterprise** (because of rating, price and opening hours) ≈ $20/1k | 1 |
 | Auto-detect (on clicking View) | Autocomplete (free in a session) or Text Search IDs-only (free) | 0 billed |
 | Viewing photos | Place Photos ≈ $7/1k | 2 on open (current + next); +1 per photo swiped. Dots replace image thumbnails to avoid extra billed requests |
-
 | Opening the Street View tab | Street View metadata: **free** · then Dynamic Street View ≈ $14/1k, or Dynamic Maps ≈ $7/1k for the satellite fallback | 1 (only if the tab is opened; switching tabs doesn't reload it) |
-
 
 **Typical view: about $0.035 on open, +$0.007 per extra photo swiped, +$0.014 if Street View is opened.** Removing `rating`, `userRatingCount`, `priceLevel` and `currentOpeningHours` from the field mask in `proxy/src/google.ts` drops Details to the Pro tier, at the cost of a thinner info strip.
 

@@ -3,6 +3,7 @@
 
 import { embedParamsError, frameAncestors, mapEmbedHtml } from './embed';
 import { autocomplete, photoUri, placeDetails, streetViewMetadata, textSearchPlaceId } from './google';
+import { privacyHtml } from './privacy';
 import * as v from './validate';
 import { HttpError } from './validate';
 
@@ -169,6 +170,18 @@ export default {
     const okOrigin = originAllowed(env, origin) ? origin : null;
 
     if (url.pathname === '/health') return json({ ok: true }, 200, null);
+
+    // Public privacy policy (store listing + side panel footer link).
+    if (url.pathname === '/privacy' && req.method === 'GET') {
+      return new Response(privacyHtml(), {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'public, max-age=3600',
+          'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
 
     // Hosted Street View page, loaded inside the side panel's iframe. Iframe
     // navigations carry no Origin header, so it is guarded by frame-ancestors

@@ -1,6 +1,7 @@
 # Dependencies & build output
 node_modules/
 dist/
+dist-store/
 
 # Secrets — never commit (use the *.example files as templates)
 .env

@@ -115,6 +115,7 @@ For live reload during development, run `npm run dev` and load `extension/dist` 
 | `GET /v1/photo?name=&w=` | Place Photos (New) | returns `{ photoUri }`; `w` 100–1600 |
 | `GET /v1/streetview?lat=&lng=` | Street View metadata (free) | nearest panorama within 50 m, heading toward the restaurant, distance, capture date |
 | `GET /embed/map?mode=pano\|map&…` | Maps JavaScript API (in the browser) | HTML page for the iframe; refused when opened directly in a tab |
+| `GET /privacy` | none | Public privacy policy page |
 | `GET /health` | none | |
 
 Guardrails: strict regex validation on every input; 60 requests/min per IP (Workers Rate Limiting binding, with an in-memory fallback in dev); `Origin` allowlist; 8 s upstream timeout; Google errors mapped to `quota`, `not_found`, `timeout` or `upstream` without leaking key or project details.
@@ -133,8 +134,35 @@ Check current prices on Google's Places API pricing page. Google changed its SKU
 
 **Typical view: about $0.035 on open, +$0.007 per extra photo swiped, +$0.014 if Street View is opened.** Removing `rating`, `userRatingCount`, `priceLevel` and `currentOpeningHours` from the field mask in `proxy/src/google.ts` drops Details to the Pro tier, at the cost of a thinner info strip.
 
-## Compliance notes so far
-- Official Places API (New) only, with field masks on every call.
-- No Google content stored or cached (`no-store`). Only the place_id is persisted.
-- Every photo shows its author attribution, linked as returned by the API, plus a "Report" link (`flagContentUri`). The panel footer carries the "Google Maps" text attribution.
-- The full **Compliance checklist**, **Known limitations**, Web Store checklist, privacy policy and terms-to-verify list come in Stage 5.
+## Compliance checklist
+**Google Maps Platform**
+- [x] Official APIs only (Places API (New), Street View metadata, Maps JavaScript API). No scraping of Google pages.
+- [x] Field masks on every Places call.
+- [x] No Google content cached or stored: proxy responses are `no-store`, photo bytes never touch the proxy, and photo URIs are held in memory only while the panel is open. Only `place_id`s are persisted: the last viewed place in the browser, and a 1-hour in-memory place_id cache on the proxy.
+- [x] Every photo shows its author attribution, linked as returned, plus a "Report" link (`flagContentUri`). "Google Maps" text attribution appears in the footer and under autocomplete results. Google's logo and copyright stay visible on Street View.
+- [x] No ML or derived data from Google content. No bulk pre-fetching: photos load one ahead of the one being viewed.
+- [x] Keys never in the extension or the repo. Server key restricted by API; browser key restricted by website + API. Quotas and budget alerts set.
+
+**Zomato / Swiggy**
+- [x] The content script reads only the `<h1>` and the page title on restaurant pages, locally. No requests to their servers, no page changes, no injected UI.
+- [x] Nothing leaves the browser until the user clicks **View**.
+- [ ] Their current terms checked (see [store/TERMS-CHECKLIST.md](store/TERMS-CHECKLIST.md)).
+
+**Browser store**
+- [x] Single purpose; minimal permissions (`sidePanel`, `storage`, the proxy host, content-script matches for the two sites).
+- [x] No remote code in extension pages; strict CSP. Maps run in a sandboxed iframe of our own page.
+- [x] Public privacy policy at `/privacy` on the proxy, also linked in the panel footer.
+- [x] No analytics and no browsing-history tracking.
+- [x] Content script not exposed as a web-accessible resource, so the sites can't detect the extension.
+
+Store submission kit (Edge): [store/EDGE-LISTING.md](store/EDGE-LISTING.md).
+
+## Known limitations
+- **Street View** mostly shows the street and the outside of the building. Indoor 360° views exist only where Google has them. The nearest panorama may be up to 50 m away, and imagery can be years old; the capture date is shown.
+- **Photos** come from Google Maps users and may be mostly food, outdated, or few for small or cloud-kitchen restaurants.
+- **Auto-detect** depends on Zomato's and Swiggy's URL and title formats; a redesign can break it, and manual search is the fallback. Matching can pick the wrong branch of a chain ("Not the right place?" fixes this). Swiggy titles sometimes have no city.
+- **Cloud kitchens / delivery-only brands** often aren't on Google Maps, or have no photos.
+- **API-key protection:** the server key can't be IP-restricted on Cloudflare Workers. The extension-ID check is a browser-level gate that a determined script could fake. Daily quotas cap the worst-case cost.
+- **Proxy cache and rate limit:** the place_id cache and the in-memory rate-limit fallback are per Worker instance (best effort). The Workers Rate Limiting binding is the main limit.
+- **Browsers:** needs Chrome or Edge 116+ with side panel support. Firefox isn't supported (it uses a different sidebar API).
+- **Quotas:** with the testing caps (100–200/day), the app stops working for the day when a cap is hit, until midnight Pacific time.

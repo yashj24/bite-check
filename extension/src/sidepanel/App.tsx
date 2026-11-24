@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError, api, friendlyError } from '../lib/api';
+import { ApiError, BASE, api, friendlyError } from '../lib/api';
 import {
   DEFAULT_MAX_PHOTOS,
   getLastPlaceId,
@@ -226,7 +226,10 @@ export function App() {
 
       <footer className="border-t border-stone-200 px-4 py-2 text-[11px] text-stone-500 dark:border-stone-800">
         Place info and photos from <span className="font-medium text-stone-700 dark:text-stone-300">Google Maps</span>.
-        Bite Check is not affiliated with Google, Zomato or Swiggy.
+        Bite Check is not affiliated with Google, Zomato or Swiggy.{' '}
+        <a href={`${BASE}/privacy`} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-stone-700 dark:hover:text-stone-300">
+          Privacy
+        </a>
       </footer>
     </div>
   );
